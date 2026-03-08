@@ -8,6 +8,7 @@ const I2C_SMBUS: libc::c_ulong = 0x0720;
 
 // SMBus transfer direction
 const I2C_SMBUS_READ: u8 = 1;
+const I2C_SMBUS_WRITE: u8 = 0;
 
 // SMBus transaction sizes
 const I2C_SMBUS_BYTE_DATA: u32 = 2;
@@ -78,6 +79,24 @@ impl SmbusDevice {
         }
 
         Ok(unsafe { data.byte })
+    }
+
+    /// Write a single byte to `register` via SMBus byte-data protocol.
+    pub fn write_byte_data(&self, register: u8, value: u8) -> std::io::Result<()> {
+        let mut data = I2cSmbusData { byte: value };
+        let mut args = I2cSmbusIoctlData {
+            read_write: I2C_SMBUS_WRITE,
+            command: register,
+            size: I2C_SMBUS_BYTE_DATA,
+            data: &mut data,
+        };
+
+        let ret = unsafe { libc::ioctl(self.file.as_raw_fd(), I2C_SMBUS, &mut args as *mut _) };
+        if ret < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        Ok(())
     }
 
     /// Read a 16-bit word from `register` via SMBus word-data protocol.

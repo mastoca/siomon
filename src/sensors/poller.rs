@@ -85,22 +85,28 @@ impl Poller {
             (Vec::new(), Vec::new())
         };
 
-        let i2c_src = if self.direct_io {
+        let (i2c_src, pmbus_src) = if self.direct_io {
             let buses = crate::sensors::i2c::bus_scan::enumerate_smbus_adapters();
-            Some(crate::sensors::i2c::spd5118::Spd5118Source::discover(
-                &buses,
-            ))
+            let spd = crate::sensors::i2c::spd5118::Spd5118Source::discover(&buses);
+            let pmbus = crate::sensors::i2c::pmbus::PmbusSource::discover(&buses);
+            (Some(spd), Some(pmbus))
         } else {
-            None
+            (None, None)
         };
 
+        // IPMI and HSMP — always try (don't require --direct-io)
+        let mut ipmi_src = super::ipmi::IpmiSource::discover();
+        let hsmp_src = super::hsmp::HsmpSource::discover();
+
         log::info!(
-            "Sensor poller started: {} hwmon chips, {} hwmon sensors, {} nct chips, {} ite chips, i2c: {}",
+            "Sensor poller started: {} hwmon chips, {} hwmon sensors, {} nct chips, {} ite chips, i2c: {}, ipmi: {}, hsmp: {}",
             hwmon_src.chip_count(),
             hwmon_src.sensor_count(),
             nct_src.len(),
             ite_src.len(),
             if i2c_src.is_some() { "yes" } else { "no" },
+            if ipmi_src.is_available() { "yes" } else { "no" },
+            if hsmp_src.is_available() { "yes" } else { "no" },
         );
 
         while !stop.load(std::sync::atomic::Ordering::Relaxed) {
@@ -125,6 +131,13 @@ impl Poller {
             if let Some(ref i2c) = i2c_src {
                 new_readings.extend(i2c.poll());
             }
+            if let Some(ref pmbus) = pmbus_src {
+                new_readings.extend(pmbus.poll());
+            }
+
+            // IPMI and HSMP
+            new_readings.extend(ipmi_src.poll());
+            new_readings.extend(hsmp_src.poll());
 
             // Update shared state
             if let Ok(mut state) = self.state.write() {
@@ -221,6 +234,21 @@ pub fn snapshot(
         for (id, reading) in i2c_src.poll() {
             map.insert(id, reading);
         }
+        let pmbus_src = crate::sensors::i2c::pmbus::PmbusSource::discover(&buses);
+        for (id, reading) in pmbus_src.poll() {
+            map.insert(id, reading);
+        }
     }
+
+    // IPMI and HSMP — always try
+    let mut ipmi_src = super::ipmi::IpmiSource::discover();
+    for (id, reading) in ipmi_src.poll() {
+        map.insert(id, reading);
+    }
+    let hsmp_src = super::hsmp::HsmpSource::discover();
+    for (id, reading) in hsmp_src.poll() {
+        map.insert(id, reading);
+    }
+
     map
 }

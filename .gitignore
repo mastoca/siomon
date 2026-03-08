@@ -1,2 +1,14 @@
 /target
 progress.md
+re_data/
+
+# Kernel module build artifacts
+kmod/*/*.o
+kmod/*/*.ko
+kmod/*/*.mod
+kmod/*/*.mod.c
+kmod/*/*.mod.o
+kmod/*/Module.symvers
+kmod/*/modules.order
+kmod/*/.*cmd
+kmod/*/.*.o

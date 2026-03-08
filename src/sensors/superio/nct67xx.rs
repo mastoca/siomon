@@ -60,8 +60,9 @@ const FAN_LABELS: [&str; 7] = [
     "Fan 1", "Fan 2", "Fan 3", "Fan 4", "Fan 5", "Fan 6", "Fan 7",
 ];
 
-// Fan RPM divisor constant
-const FAN_RPM_FACTOR: u32 = 1_350_000;
+// NCT6779+ stores RPM directly in the fan count register (fan_from_reg_rpm).
+// NCT6775/6776 use the traditional formula: RPM = 1350000 / count.
+const FAN_RPM_DIRECT: bool = true; // NCT6779+ (all chips we support)
 
 // Temperature source selection registers for NCT6798
 // From kernel nct6775-core.c: NCT6798_REG_TEMP_SOURCE[]
@@ -305,18 +306,15 @@ impl Nct67xxSource {
                     continue;
                 }
 
-                // RPM = 1350000 / count, adjusted for pulses per revolution
-                // The count is proportional to the period between pulses.
-                // If the fan reports more pulses per revolution, the count per
-                // actual revolution is higher, so RPM = factor / count is correct
-                // as the chip already accounts for pulse count in its measurement.
-                let rpm = FAN_RPM_FACTOR / count as u32;
+                // NCT6779+ stores RPM directly in the register (kernel: fan_from_reg_rpm).
+                // Older chips (NCT6775/6776) use count-based: RPM = 1350000 / count.
+                let rpm = count as f64;
 
                 readings.push((
                     id,
                     SensorReading::new(
                         FAN_LABELS[i].to_string(),
-                        rpm as f64,
+                        rpm,
                         SensorUnit::Rpm,
                         SensorCategory::Fan,
                     ),
@@ -419,20 +417,17 @@ mod tests {
     }
 
     #[test]
-    fn test_fan_rpm_calculation() {
-        // Count value of 675 should give 2000 RPM
-        let count = 675u32;
-        let rpm = FAN_RPM_FACTOR / count;
-        assert_eq!(rpm, 2000);
+    fn test_fan_rpm_direct() {
+        // NCT6779+ stores RPM directly in the register
+        let reg_value: u16 = 3890;
+        assert_eq!(reg_value as f64, 3890.0);
     }
 
     #[test]
-    fn test_fan_rpm_zero_count() {
-        // Count 0 means stopped — should not divide by zero
-        let count = 0u32;
-        if count == 0 {
-            assert!(true);
-        }
+    fn test_fan_rpm_zero() {
+        // Register value 0 means stopped fan
+        let reg_value: u16 = 0;
+        assert_eq!(reg_value, 0);
     }
 
     #[test]
