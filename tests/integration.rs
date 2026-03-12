@@ -74,6 +74,67 @@ fn test_cli_monitor_mode() {
     assert_eq!(cli.interval, 2000);
 }
 
+#[test]
+fn test_cli_options_after_subcommand_works() {
+    // Regression test for Issue #2 / PR #3
+    use clap::{CommandFactory, FromArgMatches};
+    // Format after subcommand should work now that format is global
+    let matches = siomon::cli::Cli::command().get_matches_from(["sio", "sensors", "-f", "json"]);
+    let cli = siomon::cli::Cli::from_arg_matches(&matches).unwrap();
+    assert_eq!(cli.format, siomon::cli::OutputFormat::Json);
+    assert!(matches!(cli.command, Some(siomon::cli::Commands::Sensors)));
+
+    // Interval after subcommand
+    let matches = siomon::cli::Cli::command().get_matches_from(["sio", "cpu", "--interval", "500"]);
+    let cli = siomon::cli::Cli::from_arg_matches(&matches).unwrap();
+    assert_eq!(cli.interval, 500);
+}
+
+#[test]
+fn test_cli_flag_precedence_with_subcommand() {
+    // Regression test for maintainer feedback
+    use clap::{CommandFactory, FromArgMatches};
+    let matches = siomon::cli::Cli::command().get_matches_from(["sio", "sensors", "-f", "json"]);
+    let mut cli = siomon::cli::Cli::from_arg_matches(&matches).unwrap();
+
+    let config = siomon::config::SiomonConfig {
+        general: siomon::config::GeneralConfig {
+            format: "xml".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    cli.apply_config(&config, &matches);
+    assert_eq!(
+        cli.format,
+        siomon::cli::OutputFormat::Json,
+        "CLI flag -f json should take precedence"
+    );
+}
+
+#[test]
+fn test_cli_no_flag_uses_config() {
+    use clap::{CommandFactory, FromArgMatches};
+    let matches = siomon::cli::Cli::command().get_matches_from(["sio", "sensors"]);
+    let mut cli = siomon::cli::Cli::from_arg_matches(&matches).unwrap();
+
+    let config = siomon::config::SiomonConfig {
+        general: siomon::config::GeneralConfig {
+            format: "xml".into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    cli.apply_config(&config, &matches);
+    assert_eq!(
+        cli.format,
+        siomon::cli::OutputFormat::Xml,
+        "No flag should use config value"
+    );
+}
+
 // ── Config parsing ──────────────────────────────────────────────────────
 
 #[test]
