@@ -1,7 +1,7 @@
 # Maintainer: Level1Techs Package Team <level1techspackageteam@gmail.com>
 # Contributor: Ewout van Mansom <ewout@vanmansom.name>
 pkgname=siomon
-pkgver=0.2.2
+pkgver=0.2.3
 pkgrel=1
 pkgdesc="Hardware information and real-time sensor monitoring tool"
 arch=(x86_64 aarch64)
