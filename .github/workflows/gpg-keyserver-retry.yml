@@ -1,0 +1,83 @@
+name: GPG Keyserver Retry
+
+# No cron — only runs when explicitly dispatched by publish-ppa.yml
+# or by self-dispatch during active retries. The gpg-retry-delay
+# environment must have a 20-minute wait timer configured (one-time
+# setup in repo Settings → Environments).
+
+on:
+  workflow_dispatch:
+    inputs:
+      gpg_fingerprint:
+        description: 'GPG key fingerprint to check'
+        required: true
+        type: string
+      tag:
+        description: 'Git tag for PPA publish'
+        required: true
+        type: string
+      series:
+        description: 'Ubuntu series for PPA publish'
+        required: true
+        type: string
+      ppa:
+        description: 'Target PPA'
+        required: true
+        type: string
+      upload:
+        description: 'Upload to PPA'
+        required: true
+        type: string
+      started_at:
+        description: 'Unix timestamp of initial dispatch (for 6-hour timeout)'
+        required: true
+        type: string
+
+permissions:
+  actions: write
+
+jobs:
+  retry:
+    name: Check GPG keyserver
+    environment: gpg-retry-delay
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check timeout
+        run: |
+          NOW=$(date +%s)
+          ELAPSED=$(( NOW - ${{ inputs.started_at }} ))
+          if [ "$ELAPSED" -gt 21600 ]; then
+            echo "::error::GPG key propagation timed out after 6 hours. Re-run publish-ppa manually."
+            exit 1
+          fi
+
+          REMAINING=$(( (21600 - ELAPSED) / 60 ))
+          echo "==> Retry pending (${REMAINING}m until timeout)"
+
+      - name: Check keyserver and dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gpg >/dev/null
+
+          if gpg --batch --keyserver hkp://keyserver.ubuntu.com --recv-keys "${{ inputs.gpg_fingerprint }}" 2>/dev/null; then
+            echo "==> GPG key ${{ inputs.gpg_fingerprint }} is now available on keyserver.ubuntu.com!"
+
+            echo "==> Dispatching PPA publish workflow..."
+            gh workflow run publish-ppa.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              -f tag="${{ inputs.tag }}" \
+              -f series="${{ inputs.series }}" \
+              -f ppa="${{ inputs.ppa }}" \
+              -f upload="${{ inputs.upload }}"
+          else
+            echo "==> GPG key ${{ inputs.gpg_fingerprint }} still not available. Scheduling next check..."
+            gh workflow run gpg-keyserver-retry.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              -f gpg_fingerprint="${{ inputs.gpg_fingerprint }}" \
+              -f tag="${{ inputs.tag }}" \
+              -f series="${{ inputs.series }}" \
+              -f ppa="${{ inputs.ppa }}" \
+              -f upload="${{ inputs.upload }}" \
+              -f started_at="${{ inputs.started_at }}"
+          fi

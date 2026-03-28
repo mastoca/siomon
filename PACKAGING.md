@@ -515,16 +515,16 @@ The PPA workflow handles this automatically:
 1. Before uploading, the workflow checks if the GPG key is retrievable
    from `keyserver.ubuntu.com`.
 2. If the key is already available, the upload proceeds immediately.
-3. If not, the workflow publishes the key with `gpg --send-keys`, stores
-   the pending upload parameters (including a `started_at` timestamp)
-   in a `PPA_GPG_RETRY` repository variable, and dispatches the
-   `gpg-keyserver-retry.yml` workflow.
+3. If not, the workflow publishes the key with `gpg --send-keys` and
+   dispatches `gpg-keyserver-retry.yml` with the pending upload
+   parameters (tag, series, PPA, and a `started_at` timestamp) passed
+   as workflow dispatch inputs.
 4. The retry workflow uses the `gpg-retry-delay` GitHub environment
    (which must have a 20-minute wait timer configured). The runner is
    not allocated during the wait, so there is no runner cost. Once the
    timer expires, it checks the keyserver. If the key is available, it
-   cleans up the variable and dispatches the full PPA workflow. If not,
-   it dispatches itself for the next check.
+   dispatches the full PPA workflow. If not, it dispatches itself for
+   the next check, forwarding all inputs.
 5. A 6-hour timeout prevents infinite retries.
 
 The retry workflow only runs when explicitly dispatched — there is no
@@ -534,15 +534,9 @@ cron schedule. It produces zero workflow runs when no retry is pending.
 the repository (Settings → Environments → New environment) with a
 20-minute wait timer protection rule. No required reviewers.
 
-You can also monitor and manage this manually:
-
-```bash
-# Check if a retry is pending
-gh variable get PPA_GPG_RETRY
-
-# Cancel a pending retry
-gh variable delete PPA_GPG_RETRY
-```
+You can monitor active retries in the Actions tab under the "GPG
+Keyserver Retry" workflow. To cancel a pending retry chain, cancel the
+active workflow run.
 
 ### PPA: "Signature verification failed"
 
